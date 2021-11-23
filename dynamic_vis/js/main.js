@@ -9,7 +9,7 @@ be animated/updated etc. Typically, you will put things here that are not depend
 var margins = { left:100, right:40, top:50, bottom:150};
 
 //define chart sizes
-var width = 600 - margins.left - margins.right;
+var width = 800 - margins.left - margins.right;
 var height = 400 - margins.top - margins.bottom;
 
 //used to swap between data tables
@@ -20,15 +20,14 @@ var t = d3.transition().duration(750);
 
 //grab entire body
 //d3.select() grabs html objects and can modify them. Here you are designating a block of space
-var g = d3.select("#chart-area")
-//define the block size
+
+var svg = d3.select("#chart-area")
     .append("svg")
     .attr("width", width + margins.left + margins.right)
-    .attr("height", height + margins.top + margins.bottom)
-    //define the chart location
-    .append("g")
-    .attr("transform", "translate(" + margins.left + ", " + margins.top  + ")");
+    .attr("height", height + margins.top + margins.bottom);
 
+var g = svg.append("g")
+    .attr("transform", "translate(" + margins.left + ", " + margins.top  + ")");
 
 var xAxisGroup = g.append("g")
     .attr("class", "x axis")
@@ -46,18 +45,26 @@ var x = d3.scaleBand() //ordinal
     .padding(0.2);
 
 // Y Scale
-var y = d3.scaleLinear()
+var y = d3.scaleLog()
     .range([height, 0]);
 
 /* Again, notice that we are not defining every attribute. We will modify what needs to be updated
 in the update loop. */
 // X Label
+/*
 g.append("text")
     .attr("y", height + 50)
     .attr("x", width / 2)
     .attr("font-size", "20px")
     .attr("text-anchor", "middle")
     .text("Month");
+
+    */
+
+var div = d3.select("body")
+    .append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);
 
 // Y Label
 var yLabel = g.append("text")
@@ -66,7 +73,7 @@ var yLabel = g.append("text")
     .attr("font-size", "20px")
     .attr("text-anchor", "middle")
     .attr("transform", "rotate(-90)")
-    .text("Revenue");
+    .text("Times read from");
 
 //========================Data Loading=======================
 /* Load the raw data file, anything that's local gets worked with within this async function. d3 can handle these
@@ -80,15 +87,31 @@ d3.csv("data/transform.csv").then(function(data){
 
     // Clean data
     data.forEach(function(d) {
-        tData[Number(d.category)] =
+        if(tData[Number(d.category)])
         {
-            variable: d.variable,
-            varrSize: Number(d.varrSize),
-            timesPointedTo: Number(d.timesPointedTo),
-            timesDereferenced: Number(d.timesDereferenced),
-            timesWrittenTo: Number(d.timesWrittenTo) + 1, //instrumenter doesn't count constructor but we will
-            timesReadFrom: Number(d.timesReadFrom)
-        };
+            tData[Number(d.category)][d.variable] =
+            {
+                varrSize: Number(d.varrSize),
+                timesPointedTo: Number(d.timesPointedTo),
+                timesDereferenced: Number(d.timesDereferenced),
+                timesWrittenTo: Number(d.timesWrittenTo) + 1, //instrumenter doesn't count constructor but we will
+                timesReadFrom: Number(d.timesReadFrom)
+            };
+        }
+        else
+        {
+            tData[Number(d.category)] = [];
+
+            tData[Number(d.category)][d.variable] =
+            {
+                varrSize: Number(d.varrSize),
+                timesPointedTo: Number(d.timesPointedTo),
+                timesDereferenced: Number(d.timesDereferenced),
+                timesWrittenTo: Number(d.timesWrittenTo) + 1, //instrumenter doesn't count constructor but we will
+                timesReadFrom: Number(d.timesReadFrom)
+            };
+        }
+
     });
 
     //what happens at each n milliseconds interval.
@@ -106,10 +129,94 @@ d3.csv("data/transform.csv").then(function(data){
 
     console.log(tData);
 
+
+    drawSummaryChart(tData);
     // Run the update in the first frame.
-    update(tData);
+    //update(tData);
 });
 
+var points = [];
+
+function drawSpecificChart(data)
+{
+    //remove all points from summary chart
+    for(const idx in points)
+    {
+        points[idx].remove();
+    }
+    points = [];
+
+
+}
+
+function drawSummaryChart(data)
+{
+
+    let yMax = d3.max(data.map(d => {
+        var cMax = 0;
+        for (const item in d)
+        {
+            if(d[item].timesReadFrom > cMax) cMax = d[item].timesReadFrom;
+        }
+        return cMax;
+    }));
+
+    x.domain(Object.keys(data[0]));
+    y.domain([1, yMax]);
+
+    var xAxisCall = d3.axisBottom(x);
+    
+    var yAxisCall = d3.axisLeft(y)
+        .ticks(10);
+
+    /*
+    var rects = g.selectAll("rect")
+        .data(data, d => d);
+    */
+
+    g.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(xAxisCall);
+    
+    g.append("g")
+        .attr("class", "y-axis")
+        .call(yAxisCall);
+
+    //draw points
+
+
+    for(const idx in data)
+    {
+        for(const idx2 in data[idx])
+        {
+            points.push(svg.selectAll("indPoints")
+            .data([0])
+            .enter()
+            .append("circle")
+                .attr("cx", x(idx2) + Math.random() * 10 + margins.left + 30)
+                .attr("cy", y(data[idx][idx2].timesReadFrom) + margins.top)
+                .attr("r", 2)
+                .style("fill", data[idx][idx2].timesReadFrom ? "gray" : "red")
+                .on("mouseover", d => {
+                    div.transition()
+                        .duration(1)
+                        .style("opacity", .9);
+                    div.html("Times read from: " + data[idx][idx2].timesReadFrom + "</br>Transform ID: " + idx)
+                        .style("left", (d3.event.pageX) + "px")
+                        .style("top", (d3.event.pageY - 28) + "px");
+                })
+                .on("mouseout", d => {
+                    div.transition()
+                        .duration(2000)
+                        .style("opacity", 0);
+                }));
+        }
+    }
+
+}
+
+/*
 function update(data) {
     var value = flag ? "revenue" : "profit";
 
@@ -135,7 +242,7 @@ function update(data) {
     references in the present data. */
 
     // JOIN new data with old elements. One element for each month.
-    var rects = g.selectAll("rect")
+/*    var rects = g.selectAll("rect")
         .data(data, function(d){
             return d.month;
         });
@@ -169,6 +276,7 @@ function update(data) {
     yLabel.text(label);
 
 }
+*/
 
 // //similar to our
 // function update(data) {
@@ -230,5 +338,3 @@ function update(data) {
 //     yLabel.text(label);
 //
 // }
-
-

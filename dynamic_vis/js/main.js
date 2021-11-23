@@ -44,10 +44,6 @@ var x = d3.scaleBand() //ordinal
     .range([0, width])
     .padding(0.2);
 
-// Y Scale
-var y = d3.scaleLog()
-    .range([height, 0]);
-
 /* Again, notice that we are not defining every attribute. We will modify what needs to be updated
 in the update loop. */
 // X Label
@@ -80,11 +76,9 @@ var yLabel = g.append("text")
 three file types; csv, tsv, and json.
 IMPORTANT: This call is new to D3 v5. You may need to modify code that you take from the internet for compatibility */
 
+var tData = [];
 
-d3.csv("data/transform.csv").then(function(data){
-
-    var tData = [];
-
+d3.csv("data/transform.csv").then(data => {
     // Clean data
     data.forEach(function(d) {
         if(tData[Number(d.category)])
@@ -129,6 +123,17 @@ d3.csv("data/transform.csv").then(function(data){
 
     console.log(tData);
 
+    //set up permanent stuff
+
+    //X axis is constant after data is loaded
+    x.domain(Object.keys(tData[0]));
+
+    var xAxisCall = d3.axisBottom(x);
+
+    g.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(xAxisCall);
 
     drawSummaryChart(tData);
     // Run the update in the first frame.
@@ -137,7 +142,24 @@ d3.csv("data/transform.csv").then(function(data){
 
 var points = [];
 
-function drawSpecificChart(data)
+const SELECTED_BACK = -2;
+var cSelectedData = -1; 
+
+var yGeneral = d3.scaleLog()
+    .range([height, 0]);
+
+var ySpecific = d3.scaleLinear()
+    .range([height, 0]);
+
+var yAxisGeneralCall = d3.axisLeft(yGeneral)
+    .ticks(5);
+
+var yAxisSpecificCall = d3.axisLeft(ySpecific)
+    .ticks(5);
+
+var curYAxis;
+
+function drawSpecificChart(index)
 {
     //remove all points from summary chart
     for(const idx in points)
@@ -146,11 +168,71 @@ function drawSpecificChart(data)
     }
     points = [];
 
+    //set up new Y axis, X axis never changes
+
+    let yMax = 0; 
+    for(const k in tData[index])
+    {
+        let tv = tData[index][k].timesReadFrom;
+        yMax = tv > yMax ? tv : yMax;
+    }
+
+    // Y Scale
+    ySpecific.domain([0, yMax]);
+
+    curYAxis.transition()
+        .duration(100)
+        .call(yAxisSpecificCall);
+
+
+    //scales now set up
+
+    for(const key in tData[index])
+    {
+        points.push(g.selectAll("rect" + key)
+            .data([0])
+            .enter()
+            .append("rect")
+            .attr("class", "bar")
+            .attr("x", x(key))
+            .attr("y", ySpecific(tData[index][key].timesReadFrom))
+            .attr("width", x.bandwidth)
+            .attr("height", height - ySpecific(tData[index][key].timesReadFrom))
+            .attr("fill", "red")
+        );
+    }
+
+
+    cSelectedData = SELECTED_BACK;
+
 
 }
 
+svg.on("click", () => {
+    if(cSelectedData > -1)
+    {
+        div.transition()
+            .duration(1)
+            .style("opacity", 0);
+        
+        drawSpecificChart(cSelectedData);
+    }
+    else if(cSelectedData == SELECTED_BACK)
+    {
+        drawSummaryChart(tData);
+    }
+});
+
 function drawSummaryChart(data)
 {
+
+    //remove all points from specific overview chart
+    for(const idx in points)
+    {
+        points[idx].remove();
+    }
+    points = [];
+
 
     let yMax = d3.max(data.map(d => {
         var cMax = 0;
@@ -161,30 +243,24 @@ function drawSummaryChart(data)
         return cMax;
     }));
 
-    x.domain(Object.keys(data[0]));
-    y.domain([1, yMax]);
+    // Y Scale
+    yGeneral.domain([1, yMax]);
 
-    var xAxisCall = d3.axisBottom(x);
-    
-    var yAxisCall = d3.axisLeft(y)
-        .ticks(10);
-
-    /*
-    var rects = g.selectAll("rect")
-        .data(data, d => d);
-    */
-
-    g.append("g")
-        .attr("class", "x axis")
-        .attr("transform", "translate(0, " + height + ")")
-        .call(xAxisCall);
-    
-    g.append("g")
-        .attr("class", "y-axis")
-        .call(yAxisCall);
-
+    if(!curYAxis)
+    {
+        curYAxis = g.append("g")
+            .attr("class", "y-axis")
+            .call(yAxisGeneralCall);
+    }
+    else
+    {
+        curYAxis.transition()
+        .duration(100)
+        .call(yAxisGeneralCall);
+    }
+        
+            
     //draw points
-
 
     for(const idx in data)
     {
@@ -194,11 +270,12 @@ function drawSummaryChart(data)
             .data([0])
             .enter()
             .append("circle")
-                .attr("cx", x(idx2) + Math.random() * 10 + margins.left + 30)
-                .attr("cy", y(data[idx][idx2].timesReadFrom) + margins.top)
+                .attr("cx", x(idx2) + Math.random() * 20 + margins.left + 22)
+                .attr("cy", yGeneral(data[idx][idx2].timesReadFrom) + margins.top)
                 .attr("r", 2)
                 .style("fill", data[idx][idx2].timesReadFrom ? "gray" : "red")
-                .on("mouseover", d => {
+                .on("mouseover", _ => {
+                    cSelectedData = idx;
                     div.transition()
                         .duration(1)
                         .style("opacity", .9);
@@ -206,7 +283,8 @@ function drawSummaryChart(data)
                         .style("left", (d3.event.pageX) + "px")
                         .style("top", (d3.event.pageY - 28) + "px");
                 })
-                .on("mouseout", d => {
+                .on("mouseout", _ => {
+                    cSelectedData = -1;
                     div.transition()
                         .duration(2000)
                         .style("opacity", 0);
@@ -214,6 +292,7 @@ function drawSummaryChart(data)
         }
     }
 
+    cSelectedData = -1;
 }
 
 /*

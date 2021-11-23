@@ -21,20 +21,52 @@ var t = d3.transition().duration(750);
 //grab entire body
 //d3.select() grabs html objects and can modify them. Here you are designating a block of space
 
-var svg = d3.select("#chart-area")
+function defineChartSvg(htmlElement)
+{
+    return d3.select(htmlElement)
     .append("svg")
     .attr("width", width + margins.left + margins.right)
     .attr("height", height + margins.top + margins.bottom);
+}
 
-var g = svg.append("g")
+var svgRead = defineChartSvg("#chart-area-read");
+var svgWrite = defineChartSvg("#chart-area-write");
+var svgPoint = defineChartSvg("#chart-area-point");
+var svgDeref = defineChartSvg("#chart-area-deref");
+
+function defineChartGlobal(svgBase)
+{
+    return svgBase.append("g")
     .attr("transform", "translate(" + margins.left + ", " + margins.top  + ")");
+}
 
-var xAxisGroup = g.append("g")
+var gRead = defineChartGlobal(svgRead);
+var gWrite = defineChartGlobal(svgWrite);
+var gPoint = defineChartGlobal(svgPoint);
+var gDeref = defineChartGlobal(svgDeref);
+
+function defineXAxisGroup(globBase)
+{
+    return globBase.append("g")
     .attr("class", "x axis")
     .attr("transform", "translate(0," + height +")");
+}
 
-var yAxisGroup = g.append("g")
+var xAxisGroupRead = defineXAxisGroup(gRead);
+var xAxisGroupWrite = defineXAxisGroup(gWrite);
+var xAxisGroupPoint = defineXAxisGroup(gPoint);
+var xAxisGroupDeref = defineXAxisGroup(gDeref);
+
+function defineYAxisGroup(globBase)
+{
+    return globBase.append("g")
     .attr("class", "y axis");
+}
+
+var yAxisGroupRead = defineYAxisGroup(gRead);
+var yAxisGroupWrite = defineYAxisGroup(gWrite);
+var yAxisGroupPoint = defineYAxisGroup(gPoint);
+var yAxisGroupDeref = defineYAxisGroup(gDeref);
 
 /* We begin the definition of the scales here because these attributes
 are not dependent on the live data. We will modify onlt the necessary attributes
@@ -44,37 +76,38 @@ var x = d3.scaleBand() //ordinal
     .range([0, width])
     .padding(0.2);
 
-/* Again, notice that we are not defining every attribute. We will modify what needs to be updated
-in the update loop. */
-// X Label
-/*
-g.append("text")
-    .attr("y", height + 50)
-    .attr("x", width / 2)
-    .attr("font-size", "20px")
-    .attr("text-anchor", "middle")
-    .text("Month");
-
-    */
-
+//tooltip div
 var div = d3.select("body")
     .append("div")
     .attr("class", "tooltip")
     .style("opacity", 0);
 
-// Y Label
-var yLabel = g.append("text")
+
+function defineYLabel(gObj, lbl)
+{
+    return gObj.append("text")
     .attr("y", -60)
     .attr("x", -(height / 2))
     .attr("font-size", "20px")
     .attr("text-anchor", "middle")
+    //.attr("transform", "translate(" + idx * Y_OFFSET + ", 0)")
     .attr("transform", "rotate(-90)")
-    .text("Times read from");
+    .text(lbl);
+}
 
-//========================Data Loading=======================
-/* Load the raw data file, anything that's local gets worked with within this async function. d3 can handle these
-three file types; csv, tsv, and json.
-IMPORTANT: This call is new to D3 v5. You may need to modify code that you take from the internet for compatibility */
+// Y Labels
+var yLabelRead = defineYLabel(gRead, "Times read from");
+var yLabelWrite = defineYLabel(gWrite, "Times written to");
+var yLabelPoint = defineYLabel(gPoint, "Times pointed to");
+var yLabelDeref = defineYLabel(gDeref, "Times dereferenced");
+
+function callXAxis(globBase, call)
+{
+    globBase.append("g")
+    .attr("class", "x axis")
+    .attr("transform", "translate(0, " + height + ")")
+    .call(call);
+}
 
 var tData = [];
 
@@ -108,19 +141,6 @@ d3.csv("data/transform.csv").then(data => {
 
     });
 
-    //what happens at each n milliseconds interval.
-    //This is basically our automatic update loop. Use it for time-based automated tasks.
-    // This sets up d3 behind the scenes.
-    // is not run on the first frame.
-    /*d3.interval(function(){
-        var newData = flag ? data : data.slice(1);
-
-        update(newData)
-        flag = !flag
-    }, 1000);
-
-    */
-
     console.log(tData);
 
     //set up permanent stuff
@@ -130,34 +150,88 @@ d3.csv("data/transform.csv").then(data => {
 
     var xAxisCall = d3.axisBottom(x);
 
-    g.append("g")
-        .attr("class", "x axis")
-        .attr("transform", "translate(0, " + height + ")")
-        .call(xAxisCall);
-
+    callXAxis(gRead, xAxisCall);
+    callXAxis(gWrite, xAxisCall);
+    callXAxis(gPoint, xAxisCall);
+    callXAxis(gDeref, xAxisCall);
+    
     drawSummaryChart(tData);
-    // Run the update in the first frame.
-    //update(tData);
 });
 
 var points = [];
 
 const SELECTED_BACK = -2;
-var cSelectedData = -1; 
+const SELECTED_NONE = -1;
+var cSelectedData = SELECTED_NONE; 
 
-var yGeneral = d3.scaleLog()
-    .range([height, 0]);
+function defineYGeneralScale()
+{
+    return d3.scaleLog()
+        .range([height, 0]);
+}
 
-var ySpecific = d3.scaleLinear()
-    .range([height, 0]);
+function defineYSpecificScale()
+{
+    return d3.scaleLinear()
+        .range([height, 0]);
+}
 
-var yAxisGeneralCall = d3.axisLeft(yGeneral)
-    .ticks(5);
+var yGeneralRead = defineYGeneralScale();
+var yGeneralWrite = defineYGeneralScale();
+var yGeneralPoint = defineYGeneralScale();
+var yGeneralDeref = defineYGeneralScale();
 
-var yAxisSpecificCall = d3.axisLeft(ySpecific)
-    .ticks(5);
+var ySpecificRead = defineYSpecificScale();
+var ySpecificWrite = defineYSpecificScale();
+var ySpecificPoint = defineYSpecificScale();
+var ySpecificDeref = defineYSpecificScale();
 
-var curYAxis;
+function defineYAxisGeneralCall(axis)
+{
+    return d3.axisLeft(axis)
+        .ticks(5);
+}
+
+var yAxisGeneralCallRead = defineYAxisGeneralCall(yGeneralRead);
+var yAxisGeneralCallWrite = defineYAxisGeneralCall(yGeneralWrite);
+var yAxisGeneralCallPoint = defineYAxisGeneralCall(yGeneralPoint);
+var yAxisGeneralCallDeref = defineYAxisGeneralCall(yGeneralDeref);
+
+var yAxisSpecificCallRead = defineYAxisGeneralCall(ySpecificRead);
+var yAxisSpecificCallWrite = defineYAxisGeneralCall(ySpecificWrite);
+var yAxisSpecificCallPoint = defineYAxisGeneralCall(ySpecificPoint);
+var yAxisSpecificCallDeref = defineYAxisGeneralCall(ySpecificDeref);
+
+var curYAxes = [];
+
+function getMaxAttribNested(data, accessor)
+{
+    let yMax = 0;
+    for(const k in data)
+    {
+        let tv = accessor(data[k]);
+        yMax = tv > yMax ? tv : yMax;
+    }
+    return yMax;
+}
+
+function makeBars(globBase, data, yAxis, accessor)
+{
+    for(const key in data)
+    {
+        points.push(globBase.selectAll("rect" + key)
+            .data([0])
+            .enter()
+            .append("rect")
+            .attr("class", "bar")
+            .attr("x", x(key))
+            .attr("y", yAxis(accessor(data[key])))
+            .attr("width", x.bandwidth)
+            .attr("height", height - yAxis(accessor(data[key])))
+            .attr("fill", "blue")
+        );
+    }
+}
 
 function drawSpecificChart(index)
 {
@@ -178,38 +252,39 @@ function drawSpecificChart(index)
     }
 
     // Y Scale
-    ySpecific.domain([0, yMax]);
+    ySpecificRead.domain([0, getMaxAttribNested(tData[index], d => d.timesReadFrom)])
+    ySpecificWrite.domain([0, getMaxAttribNested(tData[index], d => d.timesWrittenTo)])
+    ySpecificPoint.domain([0, getMaxAttribNested(tData[index], d => d.timesPointedTo)])
+    ySpecificDeref.domain([0, getMaxAttribNested(tData[index], d => d.timesDereferenced)])
 
-    curYAxis.transition()
+
+    curYAxes[0].transition()
         .duration(100)
-        .call(yAxisSpecificCall);
-
+        .call(yAxisSpecificCallRead);
+    curYAxes[1].transition()
+        .duration(100)
+        .call(yAxisSpecificCallWrite);
+    curYAxes[2].transition()
+        .duration(100)
+        .call(yAxisSpecificCallPoint);
+    curYAxes[3].transition()
+        .duration(100)
+        .call(yAxisSpecificCallDeref);
 
     //scales now set up
 
-    for(const key in tData[index])
-    {
-        points.push(g.selectAll("rect" + key)
-            .data([0])
-            .enter()
-            .append("rect")
-            .attr("class", "bar")
-            .attr("x", x(key))
-            .attr("y", ySpecific(tData[index][key].timesReadFrom))
-            .attr("width", x.bandwidth)
-            .attr("height", height - ySpecific(tData[index][key].timesReadFrom))
-            .attr("fill", "red")
-        );
-    }
-
+    makeBars(gRead, tData[index], ySpecificRead, d => d.timesReadFrom);
+    makeBars(gWrite, tData[index], ySpecificWrite, d => d.timesWrittenTo);
+    makeBars(gPoint, tData[index], ySpecificPoint, d => d.timesPointedTo);
+    makeBars(gDeref, tData[index], ySpecificDeref, d => d.timesDereferenced);
 
     cSelectedData = SELECTED_BACK;
 
-
 }
 
-svg.on("click", () => {
-    if(cSelectedData > -1)
+function clickToggle()
+{
+    if(cSelectedData != SELECTED_NONE && cSelectedData != SELECTED_BACK)
     {
         div.transition()
             .duration(1)
@@ -221,7 +296,70 @@ svg.on("click", () => {
     {
         drawSummaryChart(tData);
     }
-});
+}
+
+svgRead.on("click", clickToggle);
+svgWrite.on("click", clickToggle);
+svgPoint.on("click", clickToggle);
+svgDeref.on("click", clickToggle);
+
+function getMaxAttrib(data, accessor)
+{
+    return d3.max(data.map(d => {
+        var cMax = 0;
+        for (const item in d)
+        {
+            let temp = accessor(d[item]);
+            if(temp > cMax) cMax = temp;
+        }
+        return cMax;
+    }));
+}
+
+function createInitialYAxis(globBase, call)
+{
+    return globBase.append("g")
+        .attr("class", "y-axis")
+        .call(call);
+}
+
+function createPoint(svg, data, idx, idx2, yAxis, accessor, tooltipLabel)
+{
+    return svg.selectAll("indPoints")
+    .data([0])
+    .enter()
+    .append("circle")
+        .attr("cx", x(idx2) + Math.random() * 20 + margins.left + 22)
+        .attr("cy", yAxis(accessor(data[idx][idx2])) + margins.top)
+        .attr("r", 2)
+        .style("fill", accessor(data[idx][idx2]) ? "gray" : "red")
+        .on("mouseover", _ => {
+            cSelectedData = idx;
+            div.transition()
+                .duration(1)
+                .style("opacity", .9);
+            div.html(tooltipLabel + ": " + accessor(data[idx][idx2]) + "</br>ID: " + idx)
+                .style("left", (d3.event.pageX) + "px")
+                .style("top", (d3.event.pageY - 28) + "px");
+        })
+        .on("mouseout", _ => {
+            cSelectedData = -1;
+            div.transition()
+                .duration(2000)
+                .style("opacity", 0);
+        })
+}
+
+function createPointgroup(svg, data, axis, accessor, tooltipLabel)
+{
+    for(const idx in data)
+    {
+        for(const idx2 in data[idx])
+        {
+            points.push(createPoint(svg, data, idx, idx2, axis, accessor, tooltipLabel));
+        }
+    }
+}
 
 function drawSummaryChart(data)
 {
@@ -233,187 +371,43 @@ function drawSummaryChart(data)
     }
     points = [];
 
-
-    let yMax = d3.max(data.map(d => {
-        var cMax = 0;
-        for (const item in d)
-        {
-            if(d[item].timesReadFrom > cMax) cMax = d[item].timesReadFrom;
-        }
-        return cMax;
-    }));
-
     // Y Scale
-    yGeneral.domain([1, yMax]);
+    yGeneralRead.domain([1, getMaxAttrib(data, d => d.timesReadFrom)]);
+    yGeneralWrite.domain([1, getMaxAttrib(data, d => d.timesWrittenTo)]);
+    yGeneralPoint.domain([1, getMaxAttrib(data, d => d.timesPointedTo)]);
+    yGeneralDeref.domain([1, getMaxAttrib(data, d => d.timesDereferenced)]);
 
-    if(!curYAxis)
+    if(curYAxes.length == 0)
     {
-        curYAxis = g.append("g")
-            .attr("class", "y-axis")
-            .call(yAxisGeneralCall);
+        curYAxes.push(createInitialYAxis(gRead, yAxisGeneralCallRead));
+        curYAxes.push(createInitialYAxis(gWrite, yAxisGeneralCallWrite));
+        curYAxes.push(createInitialYAxis(gPoint, yAxisGeneralCallPoint));
+        curYAxes.push(createInitialYAxis(gDeref, yAxisGeneralCallDeref));
     }
     else
     {
-        curYAxis.transition()
-        .duration(100)
-        .call(yAxisGeneralCall);
+        curYAxes[0].transition()
+            .duration(100)
+            .call(yAxisGeneralCallRead);
+        curYAxes[1].transition()
+            .duration(100)
+            .call(yAxisGeneralCallWrite);
+        curYAxes[2].transition()
+            .duration(100)
+            .call(yAxisGeneralCallPoint);
+        curYAxes[3].transition()
+            .duration(100)
+            .call(yAxisGeneralCallDeref);
     }
         
             
     //draw points
 
-    for(const idx in data)
-    {
-        for(const idx2 in data[idx])
-        {
-            points.push(svg.selectAll("indPoints")
-            .data([0])
-            .enter()
-            .append("circle")
-                .attr("cx", x(idx2) + Math.random() * 20 + margins.left + 22)
-                .attr("cy", yGeneral(data[idx][idx2].timesReadFrom) + margins.top)
-                .attr("r", 2)
-                .style("fill", data[idx][idx2].timesReadFrom ? "gray" : "red")
-                .on("mouseover", _ => {
-                    cSelectedData = idx;
-                    div.transition()
-                        .duration(1)
-                        .style("opacity", .9);
-                    div.html("Times read from: " + data[idx][idx2].timesReadFrom + "</br>Transform ID: " + idx)
-                        .style("left", (d3.event.pageX) + "px")
-                        .style("top", (d3.event.pageY - 28) + "px");
-                })
-                .on("mouseout", _ => {
-                    cSelectedData = -1;
-                    div.transition()
-                        .duration(2000)
-                        .style("opacity", 0);
-                }));
-        }
-    }
+    createPointgroup(svgRead, data, yGeneralRead, d => d.timesReadFrom, "Times read from");
+    createPointgroup(svgWrite, data, yGeneralWrite, d => d.timesWrittenTo, "Times written to");
+    createPointgroup(svgPoint, data, yGeneralPoint, d => d.timesPointedTo, "Times pointed to");
+    createPointgroup(svgDeref, data, yGeneralDeref, d => d.timesDereferenced, "Times dereferenced");
+
 
     cSelectedData = -1;
 }
-
-/*
-function update(data) {
-    var value = flag ? "revenue" : "profit";
-
-    //revisit scales and axes
-    x.domain(data.map(function(d){ return d.month }));
-    y.domain([0, d3.max(data, function(d) { return d[value] })]);
-
-    // X Axis
-    var xAxisCall = d3.axisBottom(x);
-    xAxisGroup.transition(t).call(xAxisCall);
-
-    // Y Axis
-    var yAxisCall = d3.axisLeft(y)
-        .tickFormat(function(d){ return "$" + d; });
-    yAxisGroup.transition(t).call(yAxisCall);
-
-    /* VERY  IMPORTANT */
-    /* This is the bread and butter of D3. selectAll first joins the all html objects with
-    corresponding data using the ranges and other objects. It then seperates them into
-    two lists, depending on whether the objects data reference has an old, same, or new signature
-    The EXIT list is all old elements that dont have references in the present data set.
-    The ENTER list contains all new entering elements based on new data AS WELL AS old elements with
-    references in the present data. */
-
-    // JOIN new data with old elements. One element for each month.
-/*    var rects = g.selectAll("rect")
-        .data(data, function(d){
-            return d.month;
-        });
-
-    // EXIT old elements not present in new data.
-    rects.exit()
-        .attr("fill", "red")
-        .transition(t)
-        .attr("y", y(0))
-        .attr("height", 0)
-        .remove();
-
-    // ENTER new elements present in new data...
-    rects.enter()
-        .append("rect")
-        .attr("fill", "grey")
-        .attr("y", y(0))
-        .attr("height", 0)
-        .attr("x", function(d){ return x(d.month) })
-        .attr("width", x.bandwidth)
-        // AND UPDATE old elements present in new data.
-        .merge(rects)
-        .transition(t)
-        .attr("x", function(d){ return x(d.month) })
-        .attr("width", x.bandwidth)
-        .attr("y", function(d){ return y(d[value]); })
-        .attr("height", function(d){ return height - y(d[value]); });
-
-    //update label text
-    var label = flag ? "Revenue" : "Profit";
-    yLabel.text(label);
-
-}
-*/
-
-// //similar to our
-// function update(data) {
-//     var label = flag ? "Revenue" : "Profit";
-//
-//     //revisit the scales and axes
-//     x.domain(data.map(function(d){ return d.month }));
-//     y.domain([0, d3.max(data, function(d) { return d[value] })]);
-//
-//     // X Axis
-//     var xAxisCall = d3.axisBottom(x);
-//     xAxisGroup.transition(t).call(xAxisCall);
-//
-//     // Y Axis
-//     var yAxisCall = d3.axisLeft(y)
-//         .tickFormat(function(d){ return "$" + d; });
-//     yAxisGroup.transition(t).call(yAxisCall);
-//
-//     /* VERY  IMPORTANT */
-//     /* This is the bread and butter of D3. d3.interval first joins the all html objects with
-//     corresponding data using the ranges and other objects. It then seperaates them into
-//     two lists, depending on whether the objects data reference has an old, same, or new signature
-//     The EXIT list is all old elements that dont have references in the present data set.
-//     The Enter list contains all new entering elements based on new data AS WELL AS old elements with
-//     references in the present data. */
-//
-//     // JOIN new data with old elements. One element for each month.
-//     var rects = g.selectAll("rect")
-//         .data(data, function(d){
-//             return d.month;
-//         });
-//
-//     // EXIT old elements not present in new data.
-//     rects.exit()
-//         .attr("fill", "red")
-//     .transition(t)
-//         .attr("y", y(0))
-//         .attr("height", 0)
-//         .remove();
-//
-//     // ENTER new elements present in new data...
-//     rects.enter()
-//         .append("rect")
-//             .attr("fill", "grey")
-//             .attr("y", y(0))
-//             .attr("height", 0)
-//             .attr("x", function(d){ return x(d.month) })
-//             .attr("width", x.bandwidth)
-//             // AND UPDATE old elements present in new data.
-//             .merge(rects)
-//             .transition(t)
-//                 .attr("x", function(d){ return x(d.month) })
-//                 .attr("width", x.bandwidth)
-//                 .attr("y", function(d){ return y(d[value]); })
-//                 .attr("height", function(d){ return height - y(d[value]); });
-//
-//     //update the label text
-//     var label = flag ? "Revenue" : "Profit";
-//     yLabel.text(label);
-//
-// }
